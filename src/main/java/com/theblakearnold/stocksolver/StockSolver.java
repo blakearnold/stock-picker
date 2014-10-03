@@ -9,6 +9,7 @@ import javax.inject.Inject;
 
 import com.google.ortools.linearsolver.MPConstraint;
 import com.google.ortools.linearsolver.MPSolver;
+import com.google.ortools.linearsolver.MPSolver.OptimizationProblemType;
 import com.google.ortools.linearsolver.MPVariable;
 import com.theblakearnold.stocksolver.model.AccountModel;
 import com.theblakearnold.stocksolver.model.CategoryGroupModel;
@@ -35,19 +36,11 @@ public class StockSolver {
     System.loadLibrary("jniortools");
   }
 
-  private static MPSolver createSolver(String solverType) {
-    try {
-      return new MPSolver("IntegerProgrammingExample", MPSolver.getSolverEnum(solverType));
-    } catch (java.lang.ClassNotFoundException e) {
-      throw new Error(e);
-    } catch (java.lang.NoSuchFieldException e) {
-      return null;
-    } catch (java.lang.IllegalAccessException e) {
-      throw new Error(e);
-    }
+  private static MPSolver createSolver(OptimizationProblemType solverType) {
+    return new MPSolver("IntegerProgrammingExample", solverType);
   }
 
-  public void optimizeWiggleRoom(String solverType, double optimizeTil) {
+  public void optimizeWiggleRoom(OptimizationProblemType solverType, double optimizeTil) {
     double lowerBound = 0;
     double upperBound = 100;
     Double lastGoodPercent = null;
@@ -73,7 +66,7 @@ public class StockSolver {
     }
   }
 
-  public boolean runLinearProgrammingExample(String solverType, double categoryWiggleRoom) {
+  public boolean runLinearProgrammingExample(MPSolver.OptimizationProblemType solverType, double categoryWiggleRoom) {
     MPSolver solver = createSolver(solverType);
     if (solver == null) {
       throw new IllegalArgumentException("Could not create solver " + solverType);
@@ -156,24 +149,12 @@ public class StockSolver {
     System.out.println("Number of variables = " + solver.numVariables());
     System.out.println("Number of constraints = " + solver.numConstraints());
 
-    int resultStatus = solver.solve();
-
-    if (resultStatus == MPSolver.OPTIMAL) {
-      System.out.println("Optimal Solution found");
-    } else if (resultStatus == MPSolver.FEASIBLE) {
-      System.out.println("FEASIBLE Solution found");
-    } else if (resultStatus == MPSolver.INFEASIBLE) {
-      System.out.println("INFEASIBLE Solution found");
-    } else if (resultStatus == MPSolver.UNBOUNDED) {
-      System.out.println("UNBOUNDED Solution found");
-    } else if (resultStatus == MPSolver.ABNORMAL) {
-      System.out.println("ABNORMAL Solution found");
-    } else if (resultStatus == MPSolver.NOT_SOLVED) {
-      System.out.println("NOT_SOLVED Solution found");
-    }
+    MPSolver.ResultStatus resultStatus = solver.solve();
+    System.out.println(resultStatus.toString() + " Solution found");
+    
 
     // Check that the problem has an optimal solution.
-    if (resultStatus != MPSolver.OPTIMAL) {
+    if (resultStatus != MPSolver.ResultStatus.OPTIMAL) {
       System.err.println("The problem does not have an optimal solution! ");
       return false;
     }
