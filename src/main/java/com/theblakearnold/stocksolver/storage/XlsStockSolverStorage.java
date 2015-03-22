@@ -1,5 +1,26 @@
 package com.theblakearnold.stocksolver.storage;
 
+import com.google.common.base.Preconditions;
+import com.google.common.collect.HashBasedTable;
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Table;
+import com.google.common.io.Closeables;
+
+import com.theblakearnold.stocksolver.model.AccountModel;
+import com.theblakearnold.stocksolver.model.CategoryGroupModel;
+import com.theblakearnold.stocksolver.model.CategoryGroupModel.Builder;
+import com.theblakearnold.stocksolver.model.CategoryModel;
+import com.theblakearnold.stocksolver.model.StockHoldingModel;
+import com.theblakearnold.stocksolver.model.StockModel;
+
+import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
+import org.apache.poi.openxml4j.opc.OPCPackage;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.util.CellReference;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -11,26 +32,6 @@ import java.util.Map;
 import java.util.Set;
 
 import javax.annotation.Nullable;
-
-import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
-import org.apache.poi.openxml4j.opc.OPCPackage;
-import org.apache.poi.ss.usermodel.Cell;
-import org.apache.poi.ss.usermodel.Row;
-import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.ss.util.CellReference;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-
-import com.google.common.base.Preconditions;
-import com.google.common.collect.HashBasedTable;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Table;
-import com.google.common.io.Closeables;
-import com.theblakearnold.stocksolver.model.AccountModel;
-import com.theblakearnold.stocksolver.model.CategoryGroupModel;
-import com.theblakearnold.stocksolver.model.CategoryGroupModel.Builder;
-import com.theblakearnold.stocksolver.model.CategoryModel;
-import com.theblakearnold.stocksolver.model.StockHoldingModel;
-import com.theblakearnold.stocksolver.model.StockModel;
 
 public class XlsStockSolverStorage implements StockSolverStorage {
 
@@ -70,7 +71,7 @@ public class XlsStockSolverStorage implements StockSolverStorage {
         Sheet sheet = wb.getSheet(STOCKS_SHEET_NAME);
         if (sheet == null) {
           throw new IllegalArgumentException("Input excel file is missing sheet: "
-              + STOCKS_SHEET_NAME);
+                                             + STOCKS_SHEET_NAME);
         }
         Table<Map<String, SheetValue>, String, SheetValue> stockTable =
             parseSheet(sheet, TICKER_COLUMN_NAME);
@@ -81,7 +82,7 @@ public class XlsStockSolverStorage implements StockSolverStorage {
         Sheet allocationsSheet = wb.getSheet(ALLOCATIONS_SHEET_NAME);
         if (allocationsSheet == null) {
           throw new IllegalArgumentException("Input excel file is missing sheet: "
-              + ALLOCATIONS_SHEET_NAME);
+                                             + ALLOCATIONS_SHEET_NAME);
         }
         Table<Map<String, SheetValue>, String, SheetValue> allocationsTable =
             parseSheet(allocationsSheet, CATEGORY_COLUMN_NAME);
@@ -92,7 +93,7 @@ public class XlsStockSolverStorage implements StockSolverStorage {
         Sheet holdingsSheet = wb.getSheet(HOLDINGS_SHEET_NAME);
         if (holdingsSheet == null) {
           throw new IllegalArgumentException("Input excel file is missing sheet: "
-              + HOLDINGS_SHEET_NAME);
+                                             + HOLDINGS_SHEET_NAME);
         }
         Table<Map<String, SheetValue>, String, SheetValue> holdingsTable =
             parseSheet(holdingsSheet, TICKER_COLUMN_NAME, ACCOUNT_COLUMN_NAME);
@@ -108,7 +109,8 @@ public class XlsStockSolverStorage implements StockSolverStorage {
     }
   }
 
-  private void parseHoldingsTable(Table<Map<String, SheetValue>, String, SheetValue> holdingsTable) {
+  private void parseHoldingsTable(
+      Table<Map<String, SheetValue>, String, SheetValue> holdingsTable) {
     Map<String, AccountModel.Builder> accountModelBuilderByAccountName = new HashMap<>();
     Map<String, Double> valueByAccountName = new HashMap<>();
     for (Map<String, SheetValue> keyMap : holdingsTable.rowKeySet()) {
@@ -133,16 +135,15 @@ public class XlsStockSolverStorage implements StockSolverStorage {
 
       if (!stockModelByTicker.containsKey(ticker)) {
         System.out.println("skipping adding ticker to account because not defined in stocks sheet: "
-            + ticker);
+                           + ticker);
         continue;
       }
-
 
       double minValue = 0;
       SheetValue minValueSheetValue = holdingsTable.get(keyMap, MIN_VALUE_COLUMN_NAME);
       if (minValueSheetValue == null) {
         System.out.println(String.format("skipping adding min value for ticker %s,"
-            + " missing column: %s", ticker, MIN_VALUE_COLUMN_NAME));
+                                         + " missing column: %s", ticker, MIN_VALUE_COLUMN_NAME));
       } else {
 
         Double minValueParsed = minValueSheetValue.getDoubleWithParsing();
@@ -185,12 +186,13 @@ public class XlsStockSolverStorage implements StockSolverStorage {
       }
       accountModelBuilderByAccountName.get(accountName).setValue(accountValue).build();
       accountModel.add(accountModelBuilderByAccountName.get(accountName)
-          .setValue(valueByAccountName.get(accountName)).build());
+                           .setValue(valueByAccountName.get(accountName)).build());
     }
     System.out.println(accountModel);
   }
 
-  private void parseAllocationsTable(Table<Map<String, SheetValue>, String, SheetValue> allocationsTable) {
+  private void parseAllocationsTable(
+      Table<Map<String, SheetValue>, String, SheetValue> allocationsTable) {
     Map<String, CategoryGroupModel.Builder> cateogryGroupByGroupName = new HashMap<>();
     String defaultCategoryName = "Default";
     for (Map<String, SheetValue> keySet : allocationsTable.rowKeySet()) {
@@ -250,7 +252,8 @@ public class XlsStockSolverStorage implements StockSolverStorage {
           System.out.println("skipping value: " + sheetValue);
           continue;
         }
-        stockModelBuilder.setAllocation(CategoryModel.create(category, 100 * sheetValue.doubleValue()));
+        stockModelBuilder
+            .setAllocation(CategoryModel.create(category, 100 * sheetValue.doubleValue()));
       }
       stockModelByTicker.put(ticker, stockModelBuilder.build());
       System.out.println(stockModelByTicker.get(ticker));
@@ -258,7 +261,7 @@ public class XlsStockSolverStorage implements StockSolverStorage {
   }
 
   private Table<Map<String, SheetValue>, String, SheetValue> parseSheet(Sheet sheet,
-      String... keyColumnNames) {
+                                                                        String... keyColumnNames) {
     Preconditions.checkArgument(keyColumnNames.length != 0, "keyColumnNames must have 1 key");
     Table<Map<String, SheetValue>, String, SheetValue> outputTable = HashBasedTable.create();
     Iterator<Row> rowIterator = sheet.iterator();
@@ -294,14 +297,16 @@ public class XlsStockSolverStorage implements StockSolverStorage {
         if (cell == null) {
           hasFullKey = false;
           System.out.println("Missing key value: "
-              + columnNameByColumnIndex.get(keyColumnIndex) + " in row " + row.getRowNum());
+                             + columnNameByColumnIndex.get(keyColumnIndex) + " in row " + row
+              .getRowNum());
           break;
         }
         SheetValue keyValue = extractSheetValue(cell, false);
         if (keyValue == null) {
           hasFullKey = false;
           System.out.println("Missing key value: "
-              + columnNameByColumnIndex.get(keyColumnIndex) + " in row " + row.getRowNum());
+                             + columnNameByColumnIndex.get(keyColumnIndex) + " in row " + row
+              .getRowNum());
           break;
         }
         keyBuilder.put(columnNameByColumnIndex.get(keyColumnIndex), keyValue);
@@ -341,7 +346,7 @@ public class XlsStockSolverStorage implements StockSolverStorage {
         if (throwException) {
           CellReference cellRef = new CellReference(cell);
           throw new IllegalArgumentException("cell is not a string for cell "
-              + cellRef.formatAsString());
+                                             + cellRef.formatAsString());
         } else {
           return null;
         }
@@ -357,7 +362,7 @@ public class XlsStockSolverStorage implements StockSolverStorage {
         if (throwException) {
           CellReference cellRef = new CellReference(cell);
           throw new IllegalArgumentException("cell is not a number for cell "
-              + cellRef.formatAsString());
+                                             + cellRef.formatAsString());
         } else {
           return null;
         }
@@ -375,7 +380,7 @@ public class XlsStockSolverStorage implements StockSolverStorage {
         if (throwException) {
           CellReference cellRef = new CellReference(cell);
           throw new IllegalArgumentException("cell is not a number or string for cell "
-              + cellRef.formatAsString() + " " + cell.getCellType());
+                                             + cellRef.formatAsString() + " " + cell.getCellType());
         } else {
           return null;
         }

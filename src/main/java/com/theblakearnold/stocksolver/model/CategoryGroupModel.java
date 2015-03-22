@@ -1,48 +1,52 @@
 package com.theblakearnold.stocksolver.model;
 
-import java.util.ArrayList;
-import java.util.List;
-
 import com.google.auto.value.AutoValue;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @AutoValue
 public abstract class CategoryGroupModel {
 
-	CategoryGroupModel() {}
+  CategoryGroupModel() {
+  }
 
-	public abstract String name();
-	public abstract ImmutableList<CategoryModel> categories();
+  public abstract String name();
 
-	public static Builder newBuilder() {
-		return new Builder();
-	}
+  public abstract ImmutableList<CategoryModel> categories();
 
-	public static class Builder {
-		private String name;
-		private final List<CategoryModel> categories = new ArrayList<>();
+  public static Builder newBuilder() {
+    return new Builder();
+  }
 
-		private Builder() {}
+  public static class Builder {
 
-		public Builder setName(String name) {
-			this.name = name;
-			return this;
-		}
+    private String name;
+    private final List<CategoryModel> categories = new ArrayList<>();
 
-		public Builder addCategory(CategoryModel category) {
-			Preconditions.checkNotNull(category);
-			categories.add(category);
-			return this;
-		}
+    private Builder() {
+    }
 
-		public CategoryGroupModel build() {
-			if (name.isEmpty()) {
-				throw new IllegalStateException("name not set");
-			}
+    public Builder setName(String name) {
+      this.name = name;
+      return this;
+    }
 
-			if (categories.isEmpty()) {
-				throw new IllegalStateException("no categories added");
+    public Builder addCategory(CategoryModel category) {
+      Preconditions.checkNotNull(category);
+      categories.add(category);
+      return this;
+    }
+
+    public CategoryGroupModel build() {
+      if (name.isEmpty()) {
+        throw new IllegalStateException("name not set");
+      }
+
+      if (categories.isEmpty()) {
+        throw new IllegalStateException("no categories added");
       }
       return new AutoValue_CategoryGroupModel(name, ImmutableList.copyOf(categories));
     }

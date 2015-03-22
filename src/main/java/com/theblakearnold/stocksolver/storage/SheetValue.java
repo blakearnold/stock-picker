@@ -1,8 +1,8 @@
 package com.theblakearnold.stocksolver.storage;
 
-import javax.annotation.Nullable;
-
 import com.google.auto.value.AutoValue;
+
+import javax.annotation.Nullable;
 
 @AutoValue
 public abstract class SheetValue {
@@ -14,11 +14,14 @@ public abstract class SheetValue {
 
   @Nullable
   public abstract Type type();
+
   @Nullable
   abstract String stringValue();
+
   abstract double doubleValue();
 
-  SheetValue() {}
+  SheetValue() {
+  }
 
   public static SheetValue createSheetValue(double doubleValue) {
     return new AutoValue_SheetValue(Type.DOUBLE, null, doubleValue);
