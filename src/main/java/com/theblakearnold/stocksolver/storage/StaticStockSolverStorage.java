@@ -1,18 +1,19 @@
 package com.theblakearnold.stocksolver.storage;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+
 import com.theblakearnold.stocksolver.Category;
 import com.theblakearnold.stocksolver.model.AccountModel;
 import com.theblakearnold.stocksolver.model.CategoryGroupModel;
 import com.theblakearnold.stocksolver.model.CategoryModel;
 import com.theblakearnold.stocksolver.model.StockHoldingModel;
 import com.theblakearnold.stocksolver.model.StockModel;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class StaticStockSolverStorage implements StockSolverStorage {
 
@@ -41,7 +42,6 @@ public class StaticStockSolverStorage implements StockSolverStorage {
         .setAllocation(createCategoryModel(Category.DOMESTIC_VALUE, 44)).build());
     stockModels.put("VGSNX", StockModel.newBuilder().setTicker("VGSNX")
         .setAllocation(createCategoryModel(Category.REAL_ESTATE_DOM, 100)).build());
-
 
     stockModels.put("VBMPX", StockModel.newBuilder().setTicker("VBMPX")
         .setAllocation(createCategoryModel(Category.BONDS, 100)).build());
@@ -144,29 +144,29 @@ public class StaticStockSolverStorage implements StockSolverStorage {
           .addCategory(CategoryModel.create(Category.FOREIGN_VALUE.name(), 9.0))
           .addCategory(CategoryModel.create(Category.FOREIGN_SMALL_CAP.name(), 4.0)).build());
 
-	static {
-		double total = 0;
-		for (CategoryGroupModel categoryGroupModel : CATEGORY_GROUP_MODELS) {
-			for (CategoryModel categoryModel : categoryGroupModel.categories()) {
-				total += categoryModel.percent();
-			}
-		}
-		Preconditions.checkArgument(total == 100, "Category Percentages dont sum to 100 %s", total);
-	}
+  static {
+    double total = 0;
+    for (CategoryGroupModel categoryGroupModel : CATEGORY_GROUP_MODELS) {
+      for (CategoryModel categoryModel : categoryGroupModel.categories()) {
+        total += categoryModel.percent();
+      }
+    }
+    Preconditions.checkArgument(total == 100, "Category Percentages dont sum to 100 %s", total);
+  }
 
 
-	@Override
-	public List<AccountModel> getAccounts() {
-		return ACCOUNT_MODELS;
-	}
+  @Override
+  public List<AccountModel> getAccounts() {
+    return ACCOUNT_MODELS;
+  }
 
-	@Override
-	public List<StockModel> getStocks() {
-		return null;
-	}
+  @Override
+  public List<StockModel> getStocks() {
+    return null;
+  }
 
-	@Override
-	public List<CategoryGroupModel> getCategoryGroups() {
+  @Override
+  public List<CategoryGroupModel> getCategoryGroups() {
     return CATEGORY_GROUP_MODELS;
   }
 }

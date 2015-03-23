@@ -1,8 +1,8 @@
 package com.theblakearnold.stocksolver.storage;
 
-import javax.annotation.Nullable;
-
 import com.google.auto.value.AutoValue;
+
+import javax.annotation.Nullable;
 
 @AutoValue
 public abstract class SheetValue {
@@ -14,11 +14,14 @@ public abstract class SheetValue {
 
   @Nullable
   public abstract Type type();
+
   @Nullable
   abstract String stringValue();
+
   abstract double doubleValue();
 
-  SheetValue() {}
+  SheetValue() {
+  }
 
   public static SheetValue createSheetValue(double doubleValue) {
     return new AutoValue_SheetValue(Type.DOUBLE, null, doubleValue);
@@ -35,6 +38,11 @@ public abstract class SheetValue {
     return stringValue();
   }
 
+  /**
+   * Returns the double value.
+   *
+   * @throws IllegalArgumentException thrown if the value is not a double
+   */
   public double getDouble() {
     if (!Type.DOUBLE.equals(type())) {
       throw new IllegalArgumentException("Not a double");
@@ -42,13 +50,9 @@ public abstract class SheetValue {
     return doubleValue();
   }
 
+  // Tries to get the double, either by parsing the string value
+  // or returning the double directly.
   public Double getDoubleWithParsing() {
-    if (Type.DOUBLE.equals(type())) {
-      return doubleValue();
-    }
-    if (Type.STRING.equals(type())) {
-
-    }
     switch (type()) {
       case DOUBLE:
         return doubleValue();
