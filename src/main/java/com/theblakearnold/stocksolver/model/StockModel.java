@@ -1,6 +1,7 @@
 package com.theblakearnold.stocksolver.model;
 
 import com.google.auto.value.AutoValue;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
 
 import java.util.HashMap;
@@ -20,6 +21,8 @@ public abstract class StockModel {
 
   abstract Map<String, Double> percentages();
 
+  public abstract double expenseRatio();
+
   public double percentage(String categoryName) {
     return percentages().get(categoryName);
   }
@@ -32,9 +35,9 @@ public abstract class StockModel {
 
     private final Map<String, Double> percentages = new HashMap<>();
     private String ticker;
+    private Double expenseRatio;
 
-    private Builder() {
-    }
+    private Builder() { }
 
     public Builder setAllocation(CategoryModel createCategoryModel) {
       percentages.put(createCategoryModel.name(), createCategoryModel.percent());
@@ -43,6 +46,11 @@ public abstract class StockModel {
 
     public Builder setTicker(String ticker) {
       this.ticker = ticker;
+      return this;
+    }
+
+    public Builder setExpenseRatio(double expenseRatio) {
+      this.expenseRatio = expenseRatio;
       return this;
     }
 
@@ -58,7 +66,8 @@ public abstract class StockModel {
         throw new IllegalStateException(
             ticker + " percentage total must be 100, was: " + percentageTotal);
       }
-      return new AutoValue_StockModel(ticker, ImmutableMap.copyOf(percentages));
+      Preconditions.checkState(expenseRatio != null, "Must set expense ratio");
+      return new AutoValue_StockModel(ticker, ImmutableMap.copyOf(percentages), expenseRatio);
     }
   }
 }

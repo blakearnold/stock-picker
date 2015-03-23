@@ -3,6 +3,7 @@ package com.theblakearnold.stocksolver.storage;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.HashBasedTable;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Table;
 import com.google.common.io.Closeables;
 
@@ -45,6 +46,7 @@ public class XlsStockSolverStorage implements StockSolverStorage {
   private static final String MIN_VALUE_COLUMN_NAME = "Min Value";
   private static final String LOCKED_COLUMN_NAME = "Locked until";
   private static final String TICKER_COLUMN_NAME = "Ticker";
+  private static final String EXPENSE_RATIO_COLUMN_NAME = "Expense Ratio";
   private static final String CATEGORY_COLUMN_NAME = "Category";
   private static final String GROUP_COLUMN_NAME = "Group";
 
@@ -242,14 +244,21 @@ public class XlsStockSolverStorage implements StockSolverStorage {
       StockModel.Builder stockModelBuilder = StockModel.newBuilder();
       stockModelBuilder.setTicker(ticker);
       Map<String, SheetValue> valuesByCategory = stockTable.row(keySet);
+      SheetValue expenseRatioValue = valuesByCategory.get(EXPENSE_RATIO_COLUMN_NAME);
+      Preconditions.checkState(expenseRatioValue != null,
+          "Expense ratio missing for stock %s", ticker);
+      Double expenseRatio = expenseRatioValue.getDoubleWithParsing();
+      Preconditions.checkState(expenseRatio != null, "Expense ratio missing for stock %s", ticker);
+      stockModelBuilder.setExpenseRatio(expenseRatio);
       for (String category : valuesByCategory.keySet()) {
-        if ("Validation".equals(category)) {
+        // Skip over known columns.
+        if (ImmutableSet.of("Validation", EXPENSE_RATIO_COLUMN_NAME).contains(category)) {
           continue;
         }
         SheetValue sheetValue = valuesByCategory.get(category);
         if (sheetValue == null || !SheetValue.Type.DOUBLE.equals(sheetValue.type())
             || sheetValue.doubleValue() == 0) {
-          System.out.println("skipping value: " + sheetValue);
+          System.out.println("skipping value: " + sheetValue + " category " + category);
           continue;
         }
         stockModelBuilder

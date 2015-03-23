@@ -1,6 +1,7 @@
 package com.theblakearnold.stocksolver;
 
 import com.google.ortools.linearsolver.MPConstraint;
+import com.google.ortools.linearsolver.MPObjective;
 import com.google.ortools.linearsolver.MPSolver;
 import com.google.ortools.linearsolver.MPSolver.OptimizationProblemType;
 import com.google.ortools.linearsolver.MPVariable;
@@ -146,6 +147,18 @@ public class StockSolver {
         }
       }
     }
+
+    // Add objective that ensure minimum expense ratio
+    MPObjective objective = solver.objective();
+    for (AccountModel account : mpVariables.keySet()) {
+      // Minimize x1 + x2 + x3 + ....
+      Map<StockModel, MPVariable> variablesByStock = mpVariables.get(account);
+      // Add stocks to obejctive.
+      for (StockModel stock : variablesByStock.keySet()) {
+        objective.setCoefficient(variablesByStock.get(stock), stock.expenseRatio());
+      }
+    }
+    objective.minimization();
 
     System.out.println("Number of variables = " + solver.numVariables());
     System.out.println("Number of constraints = " + solver.numConstraints());
