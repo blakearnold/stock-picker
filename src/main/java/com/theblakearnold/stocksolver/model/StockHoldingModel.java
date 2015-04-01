@@ -9,12 +9,12 @@ public abstract class StockHoldingModel {
   }
 
   public static StockHoldingModel create(StockModel stockModel, double minimumBalance) {
-    return new AutoValue_StockHoldingModel(stockModel, minimumBalance, false);
+    return new AutoValue_StockHoldingModel(stockModel, minimumBalance, false, 0);
   }
 
   public static StockHoldingModel create(StockModel stockModel, double minimumBalance,
-                                         boolean locked) {
-    return new AutoValue_StockHoldingModel(stockModel, minimumBalance, locked);
+                                         boolean locked, double currentHolding) {
+    return new AutoValue_StockHoldingModel(stockModel, minimumBalance, locked, currentHolding);
   }
 
   public abstract StockModel stockModel();
@@ -22,5 +22,7 @@ public abstract class StockHoldingModel {
   public abstract double minimumBalance();
 
   public abstract boolean isLocked();
+
+  public abstract double currentHolding();
 
 }

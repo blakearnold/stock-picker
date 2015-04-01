@@ -25,6 +25,7 @@ apply plugin: 'propdeps-eclipse'
 mainClassName = "com.theblakearnold.stocksolver.StockSolverMain"
 run {
     systemProperty 'java.library.path', file( 'libs/ortools' )
+    systemProperty 'java.util.logging.config.file', file( 'logging.properties' )
 }
 
 eclipse {

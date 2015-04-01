@@ -31,6 +31,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.logging.Logger;
 
 import javax.annotation.Nullable;
 
@@ -49,6 +50,8 @@ public class XlsStockSolverStorage implements StockSolverStorage {
   private static final String EXPENSE_RATIO_COLUMN_NAME = "Expense Ratio";
   private static final String CATEGORY_COLUMN_NAME = "Category";
   private static final String GROUP_COLUMN_NAME = "Group";
+
+  private final static Logger log = Logger.getLogger(XlsStockSolverStorage.class.getName());
 
   private final String filename;
   private final Map<String, StockModel> stockModelByTicker;
@@ -105,7 +108,7 @@ public class XlsStockSolverStorage implements StockSolverStorage {
       try {
         Closeables.close(pkg, true);
       } catch (Throwable t) {
-        System.out.println("Mehh... ");
+        log.severe("Mehh... ");
         t.printStackTrace();
       }
     }
@@ -122,12 +125,13 @@ public class XlsStockSolverStorage implements StockSolverStorage {
       String accountName = accountSheetValue.getString();
 
       SheetValue holdingsSheetValue = holdingsTable.get(keyMap, CURRENT_VALUE_COLUMN_NAME);
+      double tickerValue = 0;
       if (holdingsSheetValue == null) {
-        System.out.println("skipping adding value: " + holdingsSheetValue + " : " + ticker);
+        log.fine("skipping adding value: " + holdingsSheetValue + " : " + ticker);
       } else {
-        Double tickerValue = holdingsSheetValue.getDoubleWithParsing();
-        if (tickerValue == null || tickerValue == 0) {
-          System.out.println("skipping adding value: " + holdingsSheetValue + " : " + ticker);
+        tickerValue = holdingsSheetValue.getDoubleWithParsing();
+        if (tickerValue == 0) {
+          log.fine("skipping adding value: " + holdingsSheetValue + " : " + ticker);
         } else {
           Double value = valueByAccountName.get(accountName);
           double newValue = value == null ? tickerValue : tickerValue + value;
@@ -136,21 +140,21 @@ public class XlsStockSolverStorage implements StockSolverStorage {
       }
 
       if (!stockModelByTicker.containsKey(ticker)) {
-        System.out.println("skipping adding ticker to account because not defined in stocks sheet: "
-                           + ticker);
+        log.warning("skipping adding ticker to account because not defined in stocks sheet: "
+                    + ticker);
         continue;
       }
 
       double minValue = 0;
       SheetValue minValueSheetValue = holdingsTable.get(keyMap, MIN_VALUE_COLUMN_NAME);
       if (minValueSheetValue == null) {
-        System.out.println(String.format("skipping adding min value for ticker %s,"
-                                         + " missing column: %s", ticker, MIN_VALUE_COLUMN_NAME));
+        log.warning(String.format("skipping adding min value for ticker %s,"
+                                  + " missing column: %s", ticker, MIN_VALUE_COLUMN_NAME));
       } else {
 
         Double minValueParsed = minValueSheetValue.getDoubleWithParsing();
         if (minValueParsed == null) {
-          System.out.println("skipping adding value: " + minValueParsed + " : " + ticker);
+          log.fine("skipping adding value: " + minValueParsed + " : " + ticker);
         } else {
           minValue = minValueParsed;
         }
@@ -158,16 +162,16 @@ public class XlsStockSolverStorage implements StockSolverStorage {
       boolean locked = false;
       SheetValue lockedSheetValue = holdingsTable.get(keyMap, LOCKED_COLUMN_NAME);
       if (lockedSheetValue == null) {
-        System.out.println("setting locked value to false: " + ticker);
+        log.fine("setting locked value to false: " + ticker);
         locked = false;
       } else {
         Double lockedValueParsed = lockedSheetValue.getDoubleWithParsing();
         // For now, have anything non zero in the locked column signify locked.
         if (lockedValueParsed == null || lockedValueParsed.doubleValue() == 0) {
-          System.out.println("setting locked value to false: " + ticker);
+          log.fine("setting locked value to false: " + ticker);
           locked = false;
         } else {
-          System.out.println("setting locked value to true: " + ticker);
+          log.fine("setting locked value to true: " + ticker);
           locked = true;
         }
       }
@@ -177,20 +181,20 @@ public class XlsStockSolverStorage implements StockSolverStorage {
         accountModelBuilderByAccountName.put(accountName, accountModelBuilder);
       }
       accountModelBuilder.addStockHoldingModel(
-          StockHoldingModel.create(stockModelByTicker.get(ticker), minValue, locked));
+          StockHoldingModel.create(stockModelByTicker.get(ticker), minValue, locked, tickerValue));
 
     }
     for (String accountName : accountModelBuilderByAccountName.keySet()) {
       Double accountValue = valueByAccountName.get(accountName);
       if (accountValue == null) {
-        System.out.println("skipping account with zero value: " + accountName);
+        log.fine("skipping account with zero value: " + accountName);
         continue;
       }
       accountModelBuilderByAccountName.get(accountName).setValue(accountValue).build();
       accountModel.add(accountModelBuilderByAccountName.get(accountName)
                            .setValue(valueByAccountName.get(accountName)).build());
     }
-    System.out.println(accountModel);
+    log.fine(accountModel.toString());
   }
 
   private void parseAllocationsTable(
@@ -206,13 +210,13 @@ public class XlsStockSolverStorage implements StockSolverStorage {
       SheetValue sheetValue = allocationsTable.get(keySet, PERCENT_COLUMN_NAME);
       if (sheetValue == null || !SheetValue.Type.DOUBLE.equals(sheetValue.type())
           || sheetValue.doubleValue() == 0) {
-        System.out.println("skipping value: " + sheetValue);
+        log.fine("skipping value: " + sheetValue);
         continue;
       }
       SheetValue groupSheetValue = allocationsTable.get(keySet, GROUP_COLUMN_NAME);
       final String groupName;
       if (groupSheetValue == null) {
-        System.out.println("no value for group, adding to default: " + defaultCategoryName);
+        log.fine("no value for group, adding to default: " + defaultCategoryName);
         groupName = defaultCategoryName;
       } else {
         String extractedString = groupSheetValue.getString();
@@ -233,7 +237,7 @@ public class XlsStockSolverStorage implements StockSolverStorage {
     for (CategoryGroupModel.Builder categoryGroupModelBuilder : cateogryGroupByGroupName.values()) {
       categoryGroups.add(categoryGroupModelBuilder.build());
     }
-    System.out.println(categoryGroups);
+    log.fine(categoryGroups.toString());
 
   }
 
@@ -258,14 +262,14 @@ public class XlsStockSolverStorage implements StockSolverStorage {
         SheetValue sheetValue = valuesByCategory.get(category);
         if (sheetValue == null || !SheetValue.Type.DOUBLE.equals(sheetValue.type())
             || sheetValue.doubleValue() == 0) {
-          System.out.println("skipping value: " + sheetValue + " category " + category);
+          log.fine("skipping value: " + sheetValue + " category " + category);
           continue;
         }
         stockModelBuilder
             .setAllocation(CategoryModel.create(category, 100 * sheetValue.doubleValue()));
       }
       stockModelByTicker.put(ticker, stockModelBuilder.build());
-      System.out.println(stockModelByTicker.get(ticker));
+      log.fine(stockModelByTicker.get(ticker).toString());
     }
   }
 
@@ -285,14 +289,14 @@ public class XlsStockSolverStorage implements StockSolverStorage {
     for (Cell cell : row) {
       String columnName = extractString(cell, false);
       if (columnName == null) {
-        System.out.println("continue due to columnName not being a string");
+        log.fine("continue due to columnName not being a string");
         continue;
       }
       if (keyColumnNamesSet.remove(columnName)) {
         keyColumnIndexes.add(cell.getColumnIndex());
       }
       columnNameByColumnIndex.put(cell.getColumnIndex(), columnName);
-      System.out.println(String.format("Puttings %s => %s", cell.getColumnIndex(), columnName));
+      log.fine(String.format("Puttings %s => %s", cell.getColumnIndex(), columnName));
     }
     if (!keyColumnNamesSet.isEmpty()) {
       throw new IllegalArgumentException("Missing some key Column Names: " + keyColumnNamesSet);
@@ -305,27 +309,27 @@ public class XlsStockSolverStorage implements StockSolverStorage {
         Cell cell = row.getCell(keyColumnIndex);
         if (cell == null) {
           hasFullKey = false;
-          System.out.println("Missing key value: "
-                             + columnNameByColumnIndex.get(keyColumnIndex) + " in row " + row
+          log.fine("Missing key value: "
+                   + columnNameByColumnIndex.get(keyColumnIndex) + " in row " + row
               .getRowNum());
           break;
         }
         SheetValue keyValue = extractSheetValue(cell, false);
         if (keyValue == null) {
           hasFullKey = false;
-          System.out.println("Missing key value: "
-                             + columnNameByColumnIndex.get(keyColumnIndex) + " in row " + row
+          log.fine("Missing key value: "
+                   + columnNameByColumnIndex.get(keyColumnIndex) + " in row " + row
               .getRowNum());
           break;
         }
         keyBuilder.put(columnNameByColumnIndex.get(keyColumnIndex), keyValue);
       }
       if (!hasFullKey) {
-        System.out.println("Skipping row because missing key");
+        log.fine("Skipping row because missing key");
         continue;
       }
       Map<String, SheetValue> key = keyBuilder.build();
-      System.out.println(String.format("Running row %s", key));
+      log.fine(String.format("Running row %s", key));
       for (Cell cell : row) {
         if (keyColumnIndexes.contains(cell.getColumnIndex())) {
           // skip key cell
@@ -338,9 +342,9 @@ public class XlsStockSolverStorage implements StockSolverStorage {
         String columnName = columnNameByColumnIndex.get(cell.getColumnIndex());
         if (columnName != null) {
           outputTable.put(key, columnName, sheetValue);
-          System.out.println(String.format("Puttings %s, %s, => %s", key, columnName, sheetValue));
+          log.fine(String.format("Puttings %s, %s, => %s", key, columnName, sheetValue));
         } else {
-          System.out.println("continue due to no colum name!");
+          log.severe("continue due to no colum name!");
         }
       }
     }

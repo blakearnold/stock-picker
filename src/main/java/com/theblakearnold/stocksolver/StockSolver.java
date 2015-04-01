@@ -1,5 +1,9 @@
 package com.theblakearnold.stocksolver;
 
+import com.google.common.base.Optional;
+import com.google.common.collect.HashBasedTable;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Table;
 import com.google.ortools.linearsolver.MPConstraint;
 import com.google.ortools.linearsolver.MPObjective;
 import com.google.ortools.linearsolver.MPSolver;
@@ -17,6 +21,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Logger;
 
 import javax.inject.Inject;
 
@@ -27,6 +32,8 @@ import javax.inject.Inject;
 public class StockSolver {
 
   private final StockSolverStorage stockSolverStorage;
+
+  private final static Logger log = Logger.getLogger(StockSolver.class.getName());
 
   @Inject
   public StockSolver(StockSolverStorage stockSolverStorage) {
@@ -41,34 +48,85 @@ public class StockSolver {
     return new MPSolver("IntegerProgrammingExample", solverType);
   }
 
+  public void printCurrentPercentage() {
+    printPercentage(stockSolverStorage.getAccounts());
+  }
+
+  private void printPercentage(List<AccountModel> accounts) {
+    double totalCash = 0;
+    for (AccountModel accountModel : accounts) {
+      // Sum up all money
+      totalCash += accountModel.value();
+    }
+    for (CategoryGroupModel categoryGroupModel : stockSolverStorage.getCategoryGroups()) {
+      double categoryGroupTargetPercentage = 0;
+      double categoryGroupTarget = 0;
+      double categoryGroupActual = 0;
+      log.info("---Category Group---" + categoryGroupModel.name());
+      for (CategoryModel category : categoryGroupModel.categories()) {
+        double categoryTarget = category.percent() / 100.0 * totalCash;
+        categoryGroupTarget += categoryTarget;
+        categoryGroupTargetPercentage += category.percent();
+        double actual = 0;
+
+        for (AccountModel account : accounts) {
+          for (StockHoldingModel stockHolding : account.stocks()) {
+            if (stockHolding.stockModel().hasCategoryAllocation(category.name())) {
+              // setCoefficient of the percent the stock is in the category
+              double percent = stockHolding.stockModel().percentage(category.name());
+              actual += stockHolding.currentHolding() * (percent / 100.0);
+            }
+          }
+        }
+        categoryGroupActual += actual;
+        log.info(String.format("%s: Target %s, %s, Actual %s, %s", category,
+                                         categoryTarget, category.percent(), actual,
+                                         actual / totalCash * 100));
+      }
+      log.info(String.format("--- GROUP Totals: Target %s, %s, Actual %s, %s",
+                                       categoryGroupTarget, categoryGroupTargetPercentage,
+                                       categoryGroupActual,
+                                       categoryGroupActual / totalCash * 100));
+    }
+    for (AccountModel account : accounts) {
+      log.info(String.format("%s: Cash Invested: %s", account.name(), account.value()));
+    }
+    log.info(String.format("Total Cash Invested: %s", totalCash));
+  }
+
   public void optimizeWiggleRoom(OptimizationProblemType solverType, double optimizeTil) {
     double lowerBound = 0;
     double upperBound = 100;
-    Double lastGoodPercent = null;
+    Optional<List<AccountModel>> lastSolution = Optional.absent();
+    double lastGoodPercent = 0;
     int count = 0;
     // Run until we hit the optimize percent, or the last run was not successful.
     while (Math.abs(lowerBound - upperBound) > optimizeTil) {
       count++;
       double wigglePercent = (lowerBound + upperBound) / 2;
-      System.out.println("Trying wiggle room at " + wigglePercent + "%");
-      if (runLinearProgrammingExample(solverType, wigglePercent)) {
+      log.fine("Trying wiggle room at " + wigglePercent + "%");
+      Optional<List<AccountModel>> solution =
+          runLinearProgrammingExample(solverType, wigglePercent);
+      if (solution.isPresent()) {
         upperBound = wigglePercent;
+        lastSolution = solution;
         lastGoodPercent = wigglePercent;
       } else {
         lowerBound = wigglePercent;
       }
     }
-    if (lastGoodPercent == null) {
-      System.out.println("Failed to optimize wiggle percent.");
+    if (!lastSolution.isPresent()) {
+      log.warning("Failed to optimize wiggle percent.");
     } else {
-      runLinearProgrammingExample(solverType, lastGoodPercent);
-      System.out.println(String.format("Optimized in %s tries, with percent %s.",
+      log.info(String.format("Optimized in %s tries, with percent %s.",
                                        count, lastGoodPercent));
+      printDiff(stockSolverStorage.getAccounts(), lastSolution.get());
+      printPercentage(lastSolution.get());
     }
   }
 
-  public boolean runLinearProgrammingExample(MPSolver.OptimizationProblemType solverType,
-                                             double categoryWiggleRoom) {
+  public Optional<List<AccountModel>> runLinearProgrammingExample(
+      MPSolver.OptimizationProblemType solverType, double categoryWiggleRoom) {
     MPSolver solver = createSolver(solverType);
     if (solver == null) {
       throw new IllegalArgumentException("Could not create solver " + solverType);
@@ -98,7 +156,7 @@ public class StockSolver {
         }
         stockModelVariables.put(stockHoldingModel.stockModel(), mpVariable);
         solver.objective().setCoefficient(mpVariable, 1);
-        System.out.println(String.format("Added Ticker %s lb: %s",
+        log.fine(String.format("Added Ticker %s lb: %s",
                                          name, stockHoldingModel.minimumBalance()));
       }
       mpVariables.put(accountModel, stockModelVariables);
@@ -110,7 +168,7 @@ public class StockSolver {
     for (AccountModel account : mpVariables.keySet()) {
       // x1 + x2 + x3 + ... <= ACCOUNT VALUE.
       MPConstraint constraint = solver.makeConstraint(0, account.value());
-      System.out.println(String.format("Constraint #%s lb: %s, ub: %s", account.name(),
+      log.fine(String.format("Constraint #%s lb: %s, ub: %s", account.name(),
                                        constraint.lb(), constraint.ub()));
       Map<StockModel, MPVariable> variablesByStock = mpVariables.get(account);
       // Add stocks to contraints.
@@ -127,7 +185,7 @@ public class StockSolver {
         double wiggleRoomCategoryCash = categoryWiggleRoom / 100.0 * categoryTarget;
         MPConstraint constraint = solver.makeConstraint(categoryTarget - wiggleRoomCategoryCash,
                                                         categoryTarget + wiggleRoomCategoryCash);
-        System.out.println(String.format("Constraint #%s lb: %s, ub: %s", category,
+        log.fine(String.format("Constraint #%s lb: %s, ub: %s", category,
                                          constraint.lb(), constraint.ub()));
         otherConstraints.add(constraint);
 
@@ -160,88 +218,63 @@ public class StockSolver {
     }
     objective.minimization();
 
-    System.out.println("Number of variables = " + solver.numVariables());
-    System.out.println("Number of constraints = " + solver.numConstraints());
+    log.fine("Number of variables = " + solver.numVariables());
+    log.fine("Number of constraints = " + solver.numConstraints());
 
     MPSolver.ResultStatus resultStatus = solver.solve();
-    System.out.println(resultStatus.toString() + " Solution found");
+    log.fine(resultStatus.toString() + " Solution found");
 
     // Check that the problem has an optimal solution.
     if (resultStatus != MPSolver.ResultStatus.OPTIMAL) {
       System.err.println("The problem does not have an optimal solution! ");
-      return false;
+      return Optional.absent();
     }
-
-    System.out.println("Problem solved in " + solver.wallTime() + " milliseconds");
+    log.fine("Problem solved in " + solver.wallTime() + " milliseconds");
+    log.fine("Problem solved in " + solver.iterations() + " iterations");
 
     // The objective value of the solution.
-    System.out.println("Optimal objective value = " + solver.objective().value());
+    log.info("Yearly Fees = " + solver.objective().value()/100);
 
-    // The value of each variable in the solution.
+    // Build account Models for new holdings
+    List<AccountModel> newHoldings = new ArrayList<>();
     for (AccountModel account : mpVariables.keySet()) {
+      AccountModel.Builder accountModelBuilder = AccountModel.newBuilder();
+      double accountActual = 0;
       Map<StockModel, MPVariable> variablesByStock = mpVariables.get(account);
-      Map<String, StockHoldingModel> stockHoldingByTicker = new HashMap<>();
-      for (StockHoldingModel stockHolding : account.stocks()) {
-        stockHoldingByTicker.put(stockHolding.stockModel().ticker(), stockHolding);
+      for (StockModel stockModel : variablesByStock.keySet()) {
+        double value = variablesByStock.get(stockModel).solutionValue();
+        accountActual += value;
+        accountModelBuilder.addStockHoldingModel(
+            StockHoldingModel.create(stockModel, 0, false, value));
       }
-      for (StockModel stock : variablesByStock.keySet()) {
-        double diff = variablesByStock.get(stock).solutionValue()
-                      - stockHoldingByTicker.get(stock.ticker()).minimumBalance();
-        System.out.println(String.format("%s - %s = %s [ minimum value = %s - diff: %s ]",
-                                         account.name(), stock.ticker(),
-                                         variablesByStock.get(stock).solutionValue(),
-                                         stockHoldingByTicker.get(stock.ticker()).minimumBalance(),
+      newHoldings.add(accountModelBuilder.setName(account.name()).setValue(accountActual).build());
+    }
+
+    return Optional.<List<AccountModel>>of(ImmutableList.copyOf(newHoldings));
+  }
+
+  private void printDiff(List<AccountModel> currentHoldings, List<AccountModel> newHoldings) {
+    Table<String, StockModel, StockHoldingModel> currentHoldingsTable = HashBasedTable.create();
+    for (AccountModel account : currentHoldings) {
+      for (StockHoldingModel stock : account.stocks()) {
+        currentHoldingsTable.put(account.name(), stock.stockModel(), stock);
+      }
+    }
+    // The value of each variable in the solution.
+    for (AccountModel account : newHoldings) {
+      for (StockHoldingModel newStockHolding: account.stocks()) {
+        StockHoldingModel currentHolding =
+            currentHoldingsTable.get(account.name(), newStockHolding.stockModel());
+        double diff = newStockHolding.currentHolding() - currentHolding.currentHolding();
+        log.info(String.format("%s - %s = %s [ Locked? = %s, Min = %s, "
+                                         + "old value = %s, diff = %s ]",
+                                         account.name(), newStockHolding.stockModel().ticker(),
+                                         newStockHolding.currentHolding(),
+                                         currentHolding.isLocked(),
+                                         currentHolding.minimumBalance(),
+                                         currentHolding.currentHolding(),
                                          diff));
       }
     }
-
-    System.out.println("Advanced usage:");
-    System.out.println("Problem solved in " + solver.iterations() + " iterations");
-
-    for (CategoryGroupModel categoryGroupModel : stockSolverStorage.getCategoryGroups()) {
-      double categoryGroupTargetPercentage = 0;
-      double categoryGroupTarget = 0;
-      double categoryGroupActual = 0;
-      System.out.println("---Category Group---" + categoryGroupModel.name());
-      for (CategoryModel category : categoryGroupModel.categories()) {
-        double categoryTarget = category.percent() / 100.0 * totalCash;
-        categoryGroupTarget += categoryTarget;
-        categoryGroupTargetPercentage += category.percent();
-        double actual = 0;
-
-        for (AccountModel account : mpVariables.keySet()) {
-          Map<StockModel, MPVariable> variablesByStock = mpVariables.get(account);
-          for (StockModel stock : variablesByStock.keySet()) {
-            if (stock.hasCategoryAllocation(category.name())) {
-              // setCoefficient of the percent the stock is in the category
-              double percent = stock.percentage(category.name());
-              actual += variablesByStock.get(stock).solutionValue() * (percent / 100.0);
-            }
-          }
-        }
-        categoryGroupActual += actual;
-        System.out.println(String.format("%s: Target %s, %s, Actual %s, %s", category,
-                                         categoryTarget, category.percent(), actual,
-                                         actual / totalCash * 100));
-      }
-      System.out.println(String.format("--- GROUP Totals: Target %s, %s, Actual %s, %s",
-                                       categoryGroupTarget, categoryGroupTargetPercentage,
-                                       categoryGroupActual,
-                                       categoryGroupActual / totalCash * 100));
-    }
-    double actualTotalCash = 0;
-    for (AccountModel account : mpVariables.keySet()) {
-      double accountActual = 0;
-      Map<StockModel, MPVariable> variablesByStock = mpVariables.get(account);
-      for (MPVariable mpVariable : variablesByStock.values()) {
-        accountActual += mpVariable.solutionValue();
-      }
-      System.out.println(String.format("%s: Cash Invested: Target %s. Actual %s",
-                                       account.name(), account.value(), accountActual));
-      actualTotalCash += accountActual;
-    }
-    System.out.println(String.format("Total Cash Invested: Target %s. Actual %s", totalCash,
-                                     actualTotalCash));
-    return true;
   }
 }
