@@ -10,7 +10,5 @@ public interface StockSolverStorage {
 
   List<AccountModel> getAccounts();
 
-  List<StockModel> getStocks();
-
   List<CategoryGroupModel> getCategoryGroups();
 }

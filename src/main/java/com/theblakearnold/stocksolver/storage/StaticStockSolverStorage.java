@@ -161,11 +161,6 @@ public class StaticStockSolverStorage implements StockSolverStorage {
   }
 
   @Override
-  public List<StockModel> getStocks() {
-    return null;
-  }
-
-  @Override
   public List<CategoryGroupModel> getCategoryGroups() {
     return CATEGORY_GROUP_MODELS;
   }

@@ -2,6 +2,7 @@ package com.theblakearnold.stocksolver.storage;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.HashBasedTable;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Table;
@@ -17,6 +18,8 @@ import com.theblakearnold.stocksolver.model.StockModel;
 import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import org.apache.poi.openxml4j.opc.OPCPackage;
 import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellValue;
+import org.apache.poi.ss.usermodel.FormulaEvaluator;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.util.CellReference;
@@ -35,6 +38,33 @@ import java.util.logging.Logger;
 
 import javax.annotation.Nullable;
 
+/**
+ * Implements {@code StockSolverStorage} using a given XLS file.
+ * <p>
+ * The spreadsheet must be formatted the following way:
+ * 3 Sheets - named "Stocks", "Allocations", and "Holdings".
+ * The "Stocks" sheet is a list of all buyable stocks across each account.
+ * Fixed Column names:
+ * - Ticker: the ticker symbol for the stock
+ * - Expense Ratio: The stocks expense ratio
+ * - Validation: A column that is ignored, but is useful for ensuring all the categories add up to 1
+ * Flex Columns:
+ * - Any additional column
+ *
+ * <p>
+ * Each sheet is setup to contain a header row, and data rows. The first row is always
+ * the header row. Each sheet has a list of columns that, as a group, make the rows keys. This is
+ * similar to the unique or key restraint in SQL databases. Every row must contain a value for the
+ * key columns, and they must be unique within the sheet. See {@link #parseSheet} for the logic.
+ *
+ * Headers must be strings - they cannot be formulas that produce strings.
+ *
+ * Keys and values can only be Strings, Integers, and
+ * Formulas that produce Strings and Integers. Currently supported formula operators:
+ * https://poi.apache.org/spreadsheet/eval-devguide.html
+ *
+ * Any row that does not have a complete key is skipped.
+ */
 public class XlsStockSolverStorage implements StockSolverStorage {
 
   private static final String STOCKS_SHEET_NAME = "Stocks";
@@ -50,27 +80,25 @@ public class XlsStockSolverStorage implements StockSolverStorage {
   private static final String EXPENSE_RATIO_COLUMN_NAME = "Expense Ratio";
   private static final String CATEGORY_COLUMN_NAME = "Category";
   private static final String GROUP_COLUMN_NAME = "Group";
+  private static final String VALIDATION_COLUMN_NAME = "Validation";
 
   private final static Logger log = Logger.getLogger(XlsStockSolverStorage.class.getName());
 
   private final String filename;
-  private final Map<String, StockModel> stockModelByTicker;
-  private final List<AccountModel> accountModel;
-  private final List<CategoryGroupModel> categoryGroups;
+  private ImmutableMap<String, StockModel> stockModelByTicker;
+  private ImmutableList<AccountModel> accountModel;
+  private ImmutableList<CategoryGroupModel> categoryGroups;
+  private FormulaEvaluator evaluator;
 
   public XlsStockSolverStorage(String filename) {
     this.filename = filename;
-
-    // TODO: make these immutable.
-    this.stockModelByTicker = new HashMap<>();
-    this.accountModel = new ArrayList<>();
-    this.categoryGroups = new ArrayList<>();
   }
 
   public void load() throws IOException, InvalidFormatException {
     OPCPackage pkg = OPCPackage.open(filename);
     try {
       XSSFWorkbook wb = new XSSFWorkbook(pkg);
+      evaluator = wb.getCreationHelper().createFormulaEvaluator();
 
       {
         Sheet sheet = wb.getSheet(STOCKS_SHEET_NAME);
@@ -80,7 +108,7 @@ public class XlsStockSolverStorage implements StockSolverStorage {
         }
         Table<Map<String, SheetValue>, String, SheetValue> stockTable =
             parseSheet(sheet, TICKER_COLUMN_NAME);
-        parseStockTable(stockTable);
+        stockModelByTicker = parseStockTable(stockTable);
       }
 
       {
@@ -91,7 +119,8 @@ public class XlsStockSolverStorage implements StockSolverStorage {
         }
         Table<Map<String, SheetValue>, String, SheetValue> allocationsTable =
             parseSheet(allocationsSheet, CATEGORY_COLUMN_NAME);
-        parseAllocationsTable(allocationsTable);
+        categoryGroups = parseAllocationsTable(allocationsTable);
+        log.fine(categoryGroups.toString());
       }
 
       {
@@ -102,7 +131,8 @@ public class XlsStockSolverStorage implements StockSolverStorage {
         }
         Table<Map<String, SheetValue>, String, SheetValue> holdingsTable =
             parseSheet(holdingsSheet, TICKER_COLUMN_NAME, ACCOUNT_COLUMN_NAME);
-        parseHoldingsTable(holdingsTable);
+        accountModel = parseHoldingsTable(holdingsTable);
+        log.fine(accountModel.toString());
       }
     } finally {
       try {
@@ -114,7 +144,7 @@ public class XlsStockSolverStorage implements StockSolverStorage {
     }
   }
 
-  private void parseHoldingsTable(
+  private ImmutableList<AccountModel> parseHoldingsTable(
       Table<Map<String, SheetValue>, String, SheetValue> holdingsTable) {
     Map<String, AccountModel.Builder> accountModelBuilderByAccountName = new HashMap<>();
     Map<String, Double> valueByAccountName = new HashMap<>();
@@ -171,7 +201,7 @@ public class XlsStockSolverStorage implements StockSolverStorage {
           log.fine("setting locked value to false: " + ticker);
           locked = false;
         } else {
-          log.fine("setting locked value to true: " + ticker);
+          log.info("setting locked value to true: " + accountName + " " + ticker);
           locked = true;
         }
       }
@@ -184,6 +214,7 @@ public class XlsStockSolverStorage implements StockSolverStorage {
           StockHoldingModel.create(stockModelByTicker.get(ticker), minValue, locked, tickerValue));
 
     }
+    ImmutableList.Builder<AccountModel> accountModelBuilder = ImmutableList.builder();
     for (String accountName : accountModelBuilderByAccountName.keySet()) {
       Double accountValue = valueByAccountName.get(accountName);
       if (accountValue == null) {
@@ -191,20 +222,20 @@ public class XlsStockSolverStorage implements StockSolverStorage {
         continue;
       }
       accountModelBuilderByAccountName.get(accountName).setValue(accountValue).build();
-      accountModel.add(accountModelBuilderByAccountName.get(accountName)
+      accountModelBuilder.add(accountModelBuilderByAccountName.get(accountName)
                            .setValue(valueByAccountName.get(accountName)).build());
     }
-    log.fine(accountModel.toString());
+    return accountModelBuilder.build();
   }
 
-  private void parseAllocationsTable(
+  private ImmutableList<CategoryGroupModel> parseAllocationsTable(
       Table<Map<String, SheetValue>, String, SheetValue> allocationsTable) {
     Map<String, CategoryGroupModel.Builder> cateogryGroupByGroupName = new HashMap<>();
     String defaultCategoryName = "Default";
     for (Map<String, SheetValue> keySet : allocationsTable.rowKeySet()) {
       SheetValue categorySheetValue = keySet.get(CATEGORY_COLUMN_NAME);
       String category = categorySheetValue.getString();
-      if ("Validation".equals(category)) {
+      if (VALIDATION_COLUMN_NAME.equals(category)) {
         continue;
       }
       SheetValue sheetValue = allocationsTable.get(keySet, PERCENT_COLUMN_NAME);
@@ -234,14 +265,16 @@ public class XlsStockSolverStorage implements StockSolverStorage {
       categoryGroupModelBuilder.addCategory(
           CategoryModel.create(category, 100 * sheetValue.doubleValue()));
     }
+    ImmutableList.Builder<CategoryGroupModel> categoryGroupsBuilder = ImmutableList.builder();
     for (CategoryGroupModel.Builder categoryGroupModelBuilder : cateogryGroupByGroupName.values()) {
-      categoryGroups.add(categoryGroupModelBuilder.build());
+      categoryGroupsBuilder.add(categoryGroupModelBuilder.build());
     }
-    log.fine(categoryGroups.toString());
-
+    return categoryGroupsBuilder.build();
   }
 
-  private void parseStockTable(Table<Map<String, SheetValue>, String, SheetValue> stockTable) {
+  private ImmutableMap<String, StockModel> parseStockTable(
+      Table<Map<String, SheetValue>, String, SheetValue> stockTable) {
+    ImmutableMap.Builder<String, StockModel> stockModelByTickerMapBuilder = ImmutableMap.builder();
     for (Map<String, SheetValue> keySet : stockTable.rowKeySet()) {
       SheetValue tickerSheetValue = keySet.get(TICKER_COLUMN_NAME);
       String ticker = tickerSheetValue.getString();
@@ -256,7 +289,7 @@ public class XlsStockSolverStorage implements StockSolverStorage {
       stockModelBuilder.setExpenseRatio(expenseRatio);
       for (String category : valuesByCategory.keySet()) {
         // Skip over known columns.
-        if (ImmutableSet.of("Validation", EXPENSE_RATIO_COLUMN_NAME).contains(category)) {
+        if (ImmutableSet.of(VALIDATION_COLUMN_NAME, EXPENSE_RATIO_COLUMN_NAME).contains(category)) {
           continue;
         }
         SheetValue sheetValue = valuesByCategory.get(category);
@@ -268,9 +301,11 @@ public class XlsStockSolverStorage implements StockSolverStorage {
         stockModelBuilder
             .setAllocation(CategoryModel.create(category, 100 * sheetValue.doubleValue()));
       }
-      stockModelByTicker.put(ticker, stockModelBuilder.build());
-      log.fine(stockModelByTicker.get(ticker).toString());
+      StockModel stockModel = stockModelBuilder.build();
+      stockModelByTickerMapBuilder.put(ticker, stockModel);
+      log.fine(stockModel.toString());
     }
+    return stockModelByTickerMapBuilder.build();
   }
 
   private Table<Map<String, SheetValue>, String, SheetValue> parseSheet(Sheet sheet,
@@ -283,9 +318,11 @@ public class XlsStockSolverStorage implements StockSolverStorage {
     }
     Map<Integer, String> columnNameByColumnIndex = new HashMap<>();
     Set<Integer> keyColumnIndexes = new HashSet<>();
+    // Used for validating that all the keys are in the sheet.
     Set<String> keyColumnNamesSet = new HashSet<>();
     keyColumnNamesSet.addAll(Arrays.asList(keyColumnNames));
     Row row = rowIterator.next();
+    // First row parsing
     for (Cell cell : row) {
       String columnName = extractString(cell, false);
       if (columnName == null) {
@@ -330,6 +367,9 @@ public class XlsStockSolverStorage implements StockSolverStorage {
       }
       Map<String, SheetValue> key = keyBuilder.build();
       log.fine(String.format("Running row %s", key));
+      if (outputTable.containsRow(key)) {
+        throw new IllegalArgumentException("2 exact keys found " + key);
+      }
       for (Cell cell : row) {
         if (keyColumnIndexes.contains(cell.getColumnIndex())) {
           // skip key cell
@@ -384,7 +424,7 @@ public class XlsStockSolverStorage implements StockSolverStorage {
 
   @Nullable
   private SheetValue extractSheetValue(Cell cell, boolean throwException) {
-    switch (cell.getCellType()) {
+    switch (evaluator.evaluateInCell(cell).getCellType()) {
       case Cell.CELL_TYPE_NUMERIC:
         return SheetValue.createSheetValue(cell.getNumericCellValue());
       case Cell.CELL_TYPE_STRING:
@@ -402,17 +442,12 @@ public class XlsStockSolverStorage implements StockSolverStorage {
 
   @Override
   public List<AccountModel> getAccounts() {
-    return accountModel;
-  }
-
-  @Override
-  public List<StockModel> getStocks() {
-    return null;
+    return ImmutableList.copyOf(accountModel);
   }
 
   @Override
   public List<CategoryGroupModel> getCategoryGroups() {
-    return categoryGroups;
+    return ImmutableList.copyOf(categoryGroups);
   }
 
 }
