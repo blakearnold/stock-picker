@@ -9,13 +9,16 @@ import dagger.ObjectGraph;
 public class StockSolverMain {
 
   private final StockSolver stockSolver;
+  private final InputValidator validator;
 
   @Inject
-  public StockSolverMain(StockSolver stockSolver) {
+  public StockSolverMain(StockSolver stockSolver, InputValidator validator) {
     this.stockSolver = stockSolver;
+    this.validator = validator;
   }
 
   public void run() {
+    validator.validate();
     System.out.println("Current Value:");
     stockSolver.printCurrentPercentage();
     System.out.println("\n\n\n\n\n\n");

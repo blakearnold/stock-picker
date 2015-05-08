@@ -14,6 +14,7 @@ import dagger.Provides;
 
 @Module(
     injects = {
+        InputValidator.class,
         StockSolverMain.class,
         StockSolver.class,
     }

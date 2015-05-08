@@ -106,7 +106,7 @@ public class StockSolver {
       double wigglePercent = (lowerBound + upperBound) / 2;
       log.fine("Trying wiggle room at " + wigglePercent + "%");
       Optional<List<AccountModel>> solution =
-          runLinearProgrammingExample(solverType, wigglePercent);
+          runSolver(solverType, wigglePercent);
       if (solution.isPresent()) {
         upperBound = wigglePercent;
         lastSolution = solution;
@@ -125,7 +125,7 @@ public class StockSolver {
     }
   }
 
-  public Optional<List<AccountModel>> runLinearProgrammingExample(
+  public Optional<List<AccountModel>> runSolver(
       MPSolver.OptimizationProblemType solverType, double categoryWiggleRoom) {
     MPSolver solver = createSolver(solverType);
     if (solver == null) {
