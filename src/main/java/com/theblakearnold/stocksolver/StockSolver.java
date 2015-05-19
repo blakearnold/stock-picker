@@ -155,19 +155,17 @@ public class StockSolver {
                                          stockHoldingModel.minimumBalance(), name);
         }
         stockModelVariables.put(stockHoldingModel.stockModel(), mpVariable);
-        solver.objective().setCoefficient(mpVariable, 1);
         log.fine(String.format("Added Ticker %s lb: %s",
                                          name, stockHoldingModel.minimumBalance()));
       }
       mpVariables.put(accountModel, stockModelVariables);
     }
-    solver.objective().setMaximization();
 
     // Add constraints that ensure total of stocks in each account is less than
     // or equal to account value
     for (AccountModel account : mpVariables.keySet()) {
       // x1 + x2 + x3 + ... <= ACCOUNT VALUE.
-      MPConstraint constraint = solver.makeConstraint(0, account.value());
+      MPConstraint constraint = solver.makeConstraint(account.value(), account.value());
       log.fine(String.format("Constraint #%s lb: %s, ub: %s", account.name(),
                                        constraint.lb(), constraint.ub()));
       Map<StockModel, MPVariable> variablesByStock = mpVariables.get(account);
@@ -255,7 +253,9 @@ public class StockSolver {
 
   private void printDiff(List<AccountModel> currentHoldings, List<AccountModel> newHoldings) {
     Table<String, StockModel, StockHoldingModel> currentHoldingsTable = HashBasedTable.create();
+    Map<String, Double> currentAccountValues = new HashMap<>();
     for (AccountModel account : currentHoldings) {
+      currentAccountValues.put(account.name(), account.value());
       for (StockHoldingModel stock : account.stocks()) {
         currentHoldingsTable.put(account.name(), stock.stockModel(), stock);
       }
@@ -275,6 +275,8 @@ public class StockSolver {
                                          currentHolding.currentHolding(),
                                          diff));
       }
+      log.info(String.format("%s: Cash Invested: %s of %s", account.name(), account.value(),
+          currentAccountValues.get(account.name())));
     }
   }
 }
