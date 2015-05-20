@@ -1,8 +1,11 @@
 package com.theblakearnold.stocksolver;
 
+import com.google.common.base.Function;
 import com.google.common.base.Optional;
 import com.google.common.collect.HashBasedTable;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Lists;
 import com.google.common.collect.Table;
 import com.google.ortools.linearsolver.MPConstraint;
 import com.google.ortools.linearsolver.MPObjective;
@@ -18,11 +21,16 @@ import com.theblakearnold.stocksolver.model.StockModel;
 import com.theblakearnold.stocksolver.storage.StockSolverStorage;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
+import java.util.Set;
 import java.util.logging.Logger;
 
+import javax.annotation.Nullable;
 import javax.inject.Inject;
 
 /**
@@ -80,13 +88,13 @@ public class StockSolver {
         }
         categoryGroupActual += actual;
         log.info(String.format("%s: Target %s, %s, Actual %s, %s", category,
-                                         categoryTarget, category.percent(), actual,
-                                         actual / totalCash * 100));
+            categoryTarget, category.percent(), actual,
+            actual / totalCash * 100));
       }
       log.info(String.format("--- GROUP Totals: Target %s, %s, Actual %s, %s",
-                                       categoryGroupTarget, categoryGroupTargetPercentage,
-                                       categoryGroupActual,
-                                       categoryGroupActual / totalCash * 100));
+          categoryGroupTarget, categoryGroupTargetPercentage,
+          categoryGroupActual,
+          categoryGroupActual / totalCash * 100));
     }
     for (AccountModel account : accounts) {
       log.info(String.format("%s: Cash Invested: %s", account.name(), account.value()));
@@ -94,39 +102,146 @@ public class StockSolver {
     log.info(String.format("Total Cash Invested: %s", totalCash));
   }
 
-  public void optimizeWiggleRoom(OptimizationProblemType solverType, double optimizeTil) {
+  public void optimizeWiggleRoomAdvanced(final OptimizationProblemType solverType,
+      double optimizeTil) {
+    // Find overall optimization
+    double overallWiggle = findOverallWiggle(solverType, optimizeTil);
+
+    // Find each category optimization.
+    Map<String, Double> baseCategoryWiggles = buildCategoryMap(overallWiggle);
+    List<String> categories = ImmutableList.copyOf(baseCategoryWiggles.keySet());
+    Set<List<String>> tried = new HashSet<>();
+    List<Map<String, Double>> solutions = new ArrayList<>();
+    Map<String, Double> lowestSolution = null;
+    double lowestAverage = 100;
+    // Look through 1000 random combos.
+
+    // TODO(blake): We should probably find dependent categories and mess with those
+    // instead of just finding random orders.
+    for (int i = 0; i < 100; i++) {
+      log.info("Trying " + i);
+      List<String> categoriesPerm = buildRandomOrder(categories);
+      if (!tried.add(categoriesPerm)) {
+        log.info("Skipping");
+        continue;
+      }
+      Map<String, Double> categoryWiggles = new HashMap<>(baseCategoryWiggles);
+      log.info("Optimizing with order: " + categoriesPerm);
+      for (String category : categoriesPerm) {
+        double categoryWiggle = findCategoryWiggle(solverType, optimizeTil, categoryWiggles,
+            category);
+        categoryWiggles.put(category, categoryWiggle);
+      }
+      double average = calculateAverage(categoryWiggles.values());
+      if (average < lowestAverage) {
+        lowestAverage = average;
+        lowestSolution = categoryWiggles;
+        log.info(String.format("found next smallest %s", average));
+      }
+      solutions.add(categoryWiggles);
+    }
+
+    log.info(String.format("Smallest wiggle found %s", lowestSolution));
+    Optional<List<AccountModel>> solution = runSolver(solverType, lowestSolution, true);
+    printDiff(stockSolverStorage.getAccounts(), solution.get());
+    printPercentage(solution.get());
+  }
+
+  private double calculateAverage(Collection<Double> values) {
+    double total = 0;
+    for (Double value : values) {
+      total += value;
+    }
+    return total/values.size();
+  }
+
+  private double findOverallWiggle(final OptimizationProblemType solverType,
+      double optimizeTil) {
+    Optional<Double> overallOptimization =
+        binarySearch(optimizeTil, 100, new Function<Double, Boolean>() {
+          @Override
+          public Boolean apply(Double wigglePercent) {
+            Optional<List<AccountModel>> solution = runSolver(
+                solverType, buildCategoryMap(wigglePercent), false);
+            return solution.isPresent();
+          }
+        });
+    if (!overallOptimization.isPresent()) {
+      log.warning("Failed to optimize wiggle percent.");
+      throw new RuntimeException("Failed to optimize");
+    }
+    log.info(String.format("Overall Optimized with percent %s.", overallOptimization.get()));
+    return overallOptimization.get();
+  }
+
+  private double findCategoryWiggle(final OptimizationProblemType solverType,
+      double optimizeTil, final Map<String, Double> categoryWiggle, final String category) {
+    Optional<Double> overallOptimization =
+        binarySearch(optimizeTil, categoryWiggle.get(category), new Function<Double, Boolean>() {
+          @Override
+          public Boolean apply(Double wigglePercent) {
+            Map<String, Double> modifiedCategoryWiggle = new HashMap<>(categoryWiggle);
+            modifiedCategoryWiggle.put(category, wigglePercent);
+            Optional<List<AccountModel>> solution = runSolver(solverType, modifiedCategoryWiggle,
+                false);
+            return solution.isPresent();
+          }
+        });
+    if (!overallOptimization.isPresent()) {
+      log.warning("Failed to optimize wiggle percent.");
+      throw new RuntimeException("Failed to optimize");
+    }
+    return overallOptimization.get();
+  }
+
+  private <T> List<T> buildRandomOrder(List<T> items) {
+    List<T> copyOfList = new ArrayList<>(items);
+    ImmutableList.Builder<T> result = ImmutableList.builder();
+    Random random = new Random();
+    while (copyOfList.size() > 1) {
+      result.add(copyOfList.remove(random.nextInt(copyOfList.size())));
+    }
+    result.addAll(copyOfList);
+    return result.build();
+  }
+
+  /**
+   * Searches for a successful run, minimizing the input.
+   * Returns the minimum input found that runs successfully.
+   */
+  private Optional<Double> binarySearch(double optimizeTil, double maxBound,
+      Function<Double, Boolean> function) {
     double lowerBound = 0;
     double upperBound = 100;
-    Optional<List<AccountModel>> lastSolution = Optional.absent();
-    double lastGoodPercent = 0;
-    int count = 0;
+    Optional<Double> lastGoodPercent= Optional.absent();
     // Run until we hit the optimize percent, or the last run was not successful.
     while (Math.abs(lowerBound - upperBound) > optimizeTil) {
-      count++;
       double wigglePercent = (lowerBound + upperBound) / 2;
-      log.fine("Trying wiggle room at " + wigglePercent + "%");
-      Optional<List<AccountModel>> solution =
-          runSolver(solverType, wigglePercent);
-      if (solution.isPresent()) {
+      boolean result = function.apply(wigglePercent);
+      if (result) {
         upperBound = wigglePercent;
-        lastSolution = solution;
-        lastGoodPercent = wigglePercent;
+        lastGoodPercent = Optional.of(wigglePercent);
       } else {
         lowerBound = wigglePercent;
       }
     }
-    if (!lastSolution.isPresent()) {
-      log.warning("Failed to optimize wiggle percent.");
-    } else {
-      log.info(String.format("Optimized in %s tries, with percent %s.",
-                                       count, lastGoodPercent));
-      printDiff(stockSolverStorage.getAccounts(), lastSolution.get());
-      printPercentage(lastSolution.get());
+    return lastGoodPercent;
+
+  }
+
+  private Map<String, Double> buildCategoryMap(double wigglePercent) {
+    ImmutableMap.Builder wigglePercentsBuilder = ImmutableMap.builder();
+    for (CategoryGroupModel categoryGroupModel : stockSolverStorage.getCategoryGroups()) {
+      for (CategoryModel categoryModel : categoryGroupModel.categories()) {
+        wigglePercentsBuilder.put(categoryModel.name(), wigglePercent);
+      }
     }
+    return wigglePercentsBuilder.build();
   }
 
   public Optional<List<AccountModel>> runSolver(
-      MPSolver.OptimizationProblemType solverType, double categoryWiggleRoom) {
+      MPSolver.OptimizationProblemType solverType, Map<String, Double> categoryWiggleRoom,
+      boolean debugOn) {
     MPSolver solver = createSolver(solverType);
     if (solver == null) {
       throw new IllegalArgumentException("Could not create solver " + solverType);
@@ -180,7 +295,8 @@ public class StockSolver {
     for (CategoryGroupModel categoryGroupModel : stockSolverStorage.getCategoryGroups()) {
       for (CategoryModel category : categoryGroupModel.categories()) {
         double categoryTarget = category.percent() / 100 * totalCash;
-        double wiggleRoomCategoryCash = categoryWiggleRoom / 100.0 * categoryTarget;
+        double wiggleRoomCategoryCash =
+            categoryWiggleRoom.get(category.name()) / 100.0 * categoryTarget;
         MPConstraint constraint = solver.makeConstraint(categoryTarget - wiggleRoomCategoryCash,
                                                         categoryTarget + wiggleRoomCategoryCash);
         log.fine(String.format("Constraint #%s lb: %s, ub: %s", category,
@@ -224,14 +340,15 @@ public class StockSolver {
 
     // Check that the problem has an optimal solution.
     if (resultStatus != MPSolver.ResultStatus.OPTIMAL) {
-      System.err.println("The problem does not have an optimal solution! ");
       return Optional.absent();
     }
     log.fine("Problem solved in " + solver.wallTime() + " milliseconds");
     log.fine("Problem solved in " + solver.iterations() + " iterations");
 
-    // The objective value of the solution.
-    log.info("Yearly Fees = " + solver.objective().value()/100);
+    if (debugOn) {
+      // The objective value of the solution.
+      log.info("Yearly Fees = " + solver.objective().value()/100);
+    }
 
     // Build account Models for new holdings
     List<AccountModel> newHoldings = new ArrayList<>();
@@ -267,13 +384,14 @@ public class StockSolver {
             currentHoldingsTable.get(account.name(), newStockHolding.stockModel());
         double diff = newStockHolding.currentHolding() - currentHolding.currentHolding();
         log.info(String.format("%s - %s = %s [ Locked? = %s, Min = %s, "
-                                         + "old value = %s, diff = %s ]",
-                                         account.name(), newStockHolding.stockModel().ticker(),
-                                         newStockHolding.currentHolding(),
-                                         currentHolding.isLocked(),
-                                         currentHolding.minimumBalance(),
-                                         currentHolding.currentHolding(),
-                                         diff));
+                + "old value = %s, diff = %s, percent = %s ]",
+            account.name(), newStockHolding.stockModel().ticker(),
+            newStockHolding.currentHolding(),
+            currentHolding.isLocked(),
+            currentHolding.minimumBalance(),
+            currentHolding.currentHolding(),
+            diff,
+            newStockHolding.currentHolding() / account.value() * 100));
       }
       log.info(String.format("%s: Cash Invested: %s of %s", account.name(), account.value(),
           currentAccountValues.get(account.name())));

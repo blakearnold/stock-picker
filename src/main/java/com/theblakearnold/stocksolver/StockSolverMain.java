@@ -23,7 +23,7 @@ public class StockSolverMain {
     stockSolver.printCurrentPercentage();
     System.out.println("\n\n\n\n\n\n");
     System.out.println("---- Linear programming example with CLP ----");
-    stockSolver.optimizeWiggleRoom(OptimizationProblemType.CLP_LINEAR_PROGRAMMING, .01);
+    stockSolver.optimizeWiggleRoomAdvanced(OptimizationProblemType.CLP_LINEAR_PROGRAMMING, .01);
   }
 
   public static void main(String[] args) throws Exception {
