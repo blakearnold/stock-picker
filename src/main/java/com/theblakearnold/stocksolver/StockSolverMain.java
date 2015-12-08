@@ -18,9 +18,9 @@ public class StockSolverMain {
   }
 
   public void run() {
-    validator.validate();
     System.out.println("Current Value:");
     stockSolver.printCurrentPercentage();
+    validator.validate();
     System.out.println("\n\n\n\n\n\n");
     System.out.println("---- Linear programming example with CLP ----");
     stockSolver.optimizeWiggleRoomAdvanced(OptimizationProblemType.CLP_LINEAR_PROGRAMMING, .01);

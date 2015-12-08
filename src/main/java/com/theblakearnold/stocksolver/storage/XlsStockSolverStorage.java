@@ -375,11 +375,11 @@ public class XlsStockSolverStorage implements StockSolverStorage {
           // skip key cell
           continue;
         }
+        String columnName = columnNameByColumnIndex.get(cell.getColumnIndex());
         SheetValue sheetValue = extractSheetValue(cell, false);
         if (sheetValue == null) {
           continue;
         }
-        String columnName = columnNameByColumnIndex.get(cell.getColumnIndex());
         if (columnName != null) {
           outputTable.put(key, columnName, sheetValue);
           log.fine(String.format("Puttings %s, %s, => %s", key, columnName, sheetValue));
@@ -424,16 +424,28 @@ public class XlsStockSolverStorage implements StockSolverStorage {
 
   @Nullable
   private SheetValue extractSheetValue(Cell cell, boolean throwException) {
-    switch (evaluator.evaluateInCell(cell).getCellType()) {
+    int cellType;
+    try {
+      // GoogleFinance now shows up in the formula.
+      cellType = evaluator.evaluateInCell(cell).getCellType();
+    } catch (org.apache.poi.ss.formula.FormulaParseException e) {
+      cellType = cell.getCellType();
+    }
+    switch (cellType) {
       case Cell.CELL_TYPE_NUMERIC:
         return SheetValue.createSheetValue(cell.getNumericCellValue());
       case Cell.CELL_TYPE_STRING:
         return SheetValue.createSheetValue(cell.getRichStringCellValue().getString());
+      case Cell.CELL_TYPE_FORMULA:
+        // Used for GoogleFinance formulas.
+        return SheetValue.createSheetValue(cell.getStringCellValue());
       default:
         if (throwException) {
           CellReference cellRef = new CellReference(cell);
           throw new IllegalArgumentException("cell is not a number or string for cell "
-                                             + cellRef.formatAsString() + " " + cell.getCellType());
+              + cellRef.formatAsString()
+              + " type: " + cell.getCellType()
+              + " value " + cell.getStringCellValue());
         } else {
           return null;
         }
