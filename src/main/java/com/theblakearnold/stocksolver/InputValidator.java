@@ -12,8 +12,10 @@ import com.theblakearnold.stocksolver.storage.StockSolverStorage;
 
 import java.text.DecimalFormat;
 import java.text.NumberFormat;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.SortedSet;
 import java.util.TreeSet;
@@ -29,7 +31,8 @@ import javax.inject.Inject;
 public class InputValidator {
   private final static Logger log = Logger.getLogger(InputValidator.class.getName());
 
-  private final static NumberFormat formatter = new DecimalFormat("#0.00");;
+  private final static NumberFormat formatter = new DecimalFormat("#0.00");
+  private static final double WIGGLE = .1;
 
   private final StockSolverStorage stockSolverStorage;
   private double totalValue;
@@ -96,7 +99,9 @@ public class InputValidator {
         }
         log.info(String.format("Category %s - Target: $%s, Max avail: $%s",
             category.name(), formatter.format(targetValue), formatter.format(maxTotalValue)));
-        if (maxTotalValue < targetValue) {
+
+        double tragetValueMin = (1-WIGGLE) * targetValue;
+        if (maxTotalValue < tragetValueMin)  {
           throw new IllegalArgumentException("Accounts cant buy enough for category "
               + category.name());
         }
@@ -135,10 +140,10 @@ public class InputValidator {
     boolean failures = false;
     for (AccountModel account : stockSolverStorage.getAccounts()) {
       if (reliantCategoriesByAccountName.containsKey(account.name())) {
-        double sumForAccount = 0;
         for (DependentAccountValue dependentAccountValue :
             reliantCategoriesByAccountName.get(account.name())) {
           boolean successful = false;
+          StringBuilder errorMessagesForStock = new StringBuilder();
           for (StockHoldingModel stockHoldingModel : account.stocks()) {
             if (stockHoldingModel.stockModel().hasCategoryAllocation(
                 dependentAccountValue.category)) {
@@ -152,9 +157,9 @@ public class InputValidator {
                       stockHoldingModel.stockModel().percentage(category) / 100 * totalStockPrice;
                   if (categoryValueIfPurchased > targetValueByCategory.get(category)) {
                     double offBy = categoryValueIfPurchased - targetValueByCategory.get(category);
-                    log.warning(String.format(
+                    errorMessagesForStock.append(String.format(
                         "Stock %s in account %s must be purchased for category %s, but doing so "
-                            + "puts category %s over its target value by %s - %s%%",
+                            + "puts category %s over its target value by %s - %s%%\n",
                         stockHoldingModel.stockModel().ticker(),
                         account.name(),
                         dependentAccountValue.category,
@@ -168,7 +173,10 @@ public class InputValidator {
               successful |= succeededForThisStock;
             }
           }
-          failures |= !successful;
+          if (!successful) {
+            log.warning(errorMessagesForStock.toString());
+            failures = true;
+          }
 
         }
       }

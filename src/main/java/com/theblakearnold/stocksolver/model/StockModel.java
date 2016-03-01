@@ -62,9 +62,10 @@ public abstract class StockModel {
       for (Double percentage : percentages.values()) {
         percentageTotal += percentage;
       }
-      if (percentageTotal != 100) {
+      // Use a range since it's a double
+      if (percentageTotal > 100.0001 || percentageTotal < 99.999 ) {
         throw new IllegalStateException(
-            ticker + " percentage total must be 100, was: " + percentageTotal);
+            ticker + " percentage total must be 100, was: " + percentageTotal + " " + percentages);
       }
       Preconditions.checkState(expenseRatio != null, "Must set expense ratio");
       return new AutoValue_StockModel(ticker, ImmutableMap.copyOf(percentages), expenseRatio);
