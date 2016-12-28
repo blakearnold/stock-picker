@@ -438,7 +438,7 @@ public class XlsStockSolverStorage implements StockSolverStorage {
         return SheetValue.createSheetValue(cell.getRichStringCellValue().getString());
       case Cell.CELL_TYPE_FORMULA:
         // Used for GoogleFinance formulas.
-        return SheetValue.createSheetValue(cell.getStringCellValue());
+        return SheetValue.createSheetValue(cell.getNumericCellValue());
       default:
         if (throwException) {
           CellReference cellRef = new CellReference(cell);
